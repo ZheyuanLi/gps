@@ -1,0 +1,18 @@
+Package: gps
+Version: 1.1
+Date: 2022-04-15
+Title: General P-Splines
+Authors@R: c(person("Zheyuan", "Li", role = c("aut", "cre"),
+                     email = "zheyuan.li@bath.edu",
+                     comment = c(ORCID = "0000-0002-7434-5947")),
+             person("Jiguo", "Cao", role = "fnd",
+                    comment = c(ORCID = "0000-0001-7417-6330")))
+Author: Zheyuan Li [aut, cre] (<https://orcid.org/0000-0002-7434-5947>),
+    Jiguo Cao [fnd] (<https://orcid.org/0000-0001-7417-6330>)
+Maintainer: Zheyuan Li <zheyuan.li@bath.edu>
+Depends: R (>= 4.0.0)
+Imports: stats, splines, Matrix, methods, graphics, grDevices
+Description: Routines to construct general P-splines for non-uniform B-splines on arbitrary knots, proposed by Li and Cao (2022) <arXiv:2201.06808>. This P-spline variant extends the standard P-splines of Eilers and Marx (1996) <doi:10.1214/ss/1038425655> that are tailored for uniform B-splines on equidistant knots. Includes SparseD() for computing general difference matrices, SparseS() for computing derivative penalty matrix or its sparse root using a sandwich formula, etc. Also includes several demos on B-splines and P-splines. Aims to facilitate other packages to implement general P-splines as a smoothing tool in their model estimation framework.
+License: GPL-3
+NeedsCompilation: yes
+URL: https://github.com/ZheyuanLi/gps
