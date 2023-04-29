@@ -1,9 +1,5 @@
 #include <Rinternals.h>
 #include "base.h"
-SEXP C_SetAttr (SEXP x, SEXP Name, SEXP Value) {
-  setAttrib(x, install(CHAR(asChar(Name))), Value);
-  return x;
-}
 SEXP C_SetDim (SEXP x, SEXP Value) {
   setAttrib(x, R_DimSymbol, Value);
   return x;
@@ -16,10 +12,12 @@ SEXP C_VecDot (SEXP x, SEXP y) {
 }
 SEXP C_VecScal (SEXP alpha, SEXP x, SEXP overwrite) {
   int n = length(x);
-  SEXP y = x; double *ptrx = REAL(x), *ptry = ptrx;
+  SEXP y = x, dim = getAttrib(x, R_DimSymbol);
+  double *ptrx = REAL(x), *ptry = ptrx;
   int MakeCopy = 1 - asInteger(overwrite);
   if (MakeCopy) {
     y = PROTECT(allocVector(REALSXP, n));
+    setAttrib(y, R_DimSymbol, dim);
     ptry = REAL(y); VecCopy(n, ptrx, ptry);
   }
   SCAL(n, asReal(alpha), ptry);

@@ -18,6 +18,7 @@ void Diff (int n, int k, double *x, double *dx) {
   }
 }
 SEXP C_Diff (SEXP x, SEXP k, SEXP n, SEXP xi) {
+  if (!isReal(x)) error("'x' is not in double-precision mode!");
   int i = asInteger(xi), l = length(x);
   if (i < 1 || i > l) error("'xi' is out of bound!");
   double *subx = REAL(x) + i - 1;
@@ -39,6 +40,7 @@ void ComputeLD (double *xt, int k, int d, double *ld) {
   }
 }
 SEXP C_ComputeLD (SEXP xt, SEXP d) {
+  if (!isReal(xt)) error("'xt' is not in double-precision mode!");
   int K = length(xt), D = asInteger(d);
   SEXP ld = PROTECT(allocMatrix(REALSXP, K - D, D - 1));
   ComputeLD(REAL(xt), K, D, REAL(ld));
@@ -62,14 +64,14 @@ void NullVec (double *ld, int p, int m, double *h) {
   hi = h + skip; c = 1.0 / sqrt(c);
   while (hi < hp) *hi++ *= c;
 }
-void NullD (double *ld, int p, int m, double *H) {
+void NullGD (double *ld, int p, int m, double *H) {
   int i; double *h = H;
   for (i = 1; i <= m; i++, h += p) NullVec(ld, p, i, h);
 }
-SEXP C_NullD (SEXP ld, SEXP m) {
+SEXP C_NullGD (SEXP ld, SEXP m) {
   int P = nrows(ld), M = asInteger(m);
   SEXP H = PROTECT(allocMatrix(REALSXP, P, M));
-  NullD(REAL(ld), P, M, REAL(H));
+  NullGD(REAL(ld), P, M, REAL(H));
   UNPROTECT(1);
   return H;
 }

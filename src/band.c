@@ -61,6 +61,14 @@ void LTB2Dense (int b1, int n, int k, double *L, double *A) {
     Ajj += k + 1; Akj += k; Lcut += b1;
   }
 }
+SEXP C_LTB2Dense (SEXP L, SEXP k) {
+  int B1 = nrows(L), N = ncols(L), K = asInteger(k);
+  if (K < N || K >= N + B1) error("'k' is out of bound!");
+  SEXP A = PROTECT(allocMatrix(REALSXP, K, N));
+  LTB2Dense(B1, N, K, REAL(L), REAL(A));
+  UNPROTECT(1);
+  return A;
+}
 SEXP C_SolveLTB (SEXP transA, SEXP A, SEXP y, SEXP overwrite) {
   int ione = 1, n = ncols(A), b1 = nrows(A), bw = b1 - 1, k;
   char nt = 'n'; if (asInteger(transA)) nt = 't';
@@ -81,7 +89,7 @@ SEXP C_SolveLTB (SEXP transA, SEXP A, SEXP y, SEXP overwrite) {
   }
   double *xend = ptrx + n * k;
   while (ptrx < xend) {
-    F77_CALL(dtbsv)("l", &nt, "n", &n, &bw, ptrA, &b1, ptrx, &ione);
+    F77_CALL(dtbsv)("l", &nt, "n", &n, &bw, ptrA, &b1, ptrx, &ione FCONE FCONE FCONE);
     ptrx += n;
   }
   if (MakeCopy) UNPROTECT(1);
@@ -95,10 +103,10 @@ SEXP C_LPBTRF (SEXP A, SEXP overwrite) {
     X = PROTECT(allocMatrix(REALSXP, b1, n));
     ptrX = REAL(X); VecCopy(b1 * n, ptrA, ptrX);
   }
-  int info; F77_CALL(dpbtrf)("l", &n, &bw, ptrX, &b1, &info);
+  int info; F77_CALL(dpbtrf)("l", &n, &bw, ptrX, &b1, &info FCONE);
   ZeroAntiLowerTri(b1, ptrX + (n - b1) * b1, b1);
-  setAttrib(X, install("i"), ScalarInteger(info));
   if (MakeCopy) UNPROTECT(1);
+  if (info) error("The leading minor of order %d is not positive definite!", info);
   return X;
 }
 void Dx (int n, int b1, double *Dt, double *x, double *y) {
