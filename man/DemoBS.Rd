@@ -3,11 +3,11 @@
 \alias{DemoBS}
 
 \title{
-Demonstrate construction of ordinary B-splines
+Demonstrate the construction of ordinary B-splines
 }
 
 \description{
-Demonstrate construction of 4 ordinary cubic B-splines on 8 knots.
+Demonstrate the construction of 4 ordinary cubic B-splines on 8 knots.
 }
 
 \usage{
@@ -15,8 +15,8 @@ DemoBS(uniform = TRUE, clamped = FALSE)
 }
 
 \arguments{
-\item{uniform}{TRUE for uniform knots and FALSE for non-uniform knots.}
-\item{clamped}{TRUE for clamped boundary knots (for aesthetic reason only boundary knots on the left end are clamped).}
+\item{uniform}{if TRUE, place uniform knots; if FALSE, place non-uniform knots.}
+\item{clamped}{if TRUE, place clamped boundary knots when \code{uniform = FALSE}. For aesthetic reason, only boundary knots on the left end are clamped. This parameter is ignored when \code{uniform = TRUE}.}
 }
 
 \value{

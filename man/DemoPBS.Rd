@@ -3,11 +3,11 @@
 \alias{DemoPBS}
 
 \title{
-Demonstrate construction of periodic B-splines
+Demonstrate the construction of periodic B-splines
 }
 
 \description{
-Demonstrate construction of 6 periodic cubic B-splines on 7 domain knots.
+Demonstrate the construction of 6 periodic cubic B-splines on 7 domain knots.
 }
 
 \usage{
@@ -15,7 +15,7 @@ DemoPBS(uniform = TRUE)
 }
 
 \arguments{
-\item{uniform}{TRUE for uniform knots and FALSE for non-uniform knots.}
+\item{uniform}{if TRUE, place uniform knots; if FALSE, place non-uniform knots.}
 }
 
 \value{

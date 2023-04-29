@@ -19,8 +19,8 @@ PlaceKnots(x, d, k, domain = NULL, uniform = FALSE, periodic = FALSE)
 \item{d}{B-spline order.}
 \item{k}{number of interior knots.}
 \item{domain}{a vector of two values giving domain interval \eqn{[a, b]}. Will use \code{min(x)} and \code{max(x)} if not specified.}
-\item{uniform}{TRUE to place equidistant knots; FALSE to place quantile knots with clamped boundary knots.}
-\item{periodic}{if TRUE, return domain knot sequence that is sufficient for constructing periodic B-splines (see \code{\link{pbsDesign}}); if FALSE, return full knot sequence that is required for constructing ordinary B-splines.}
+\item{uniform}{if TRUE, place equidistant knots; if FALSE, place quantile knots with clamped boundary knots.}
+\item{periodic}{if TRUE, return the domain knot sequence that is sufficient for constructing periodic B-splines (see \code{\link{pbsDesign}}); if FALSE, return the full knot sequence that is required for constructing ordinary B-splines.}
 }
 
 \value{

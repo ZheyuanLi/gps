@@ -20,11 +20,11 @@ SparsePD(xd, d, wrap = TRUE)
 
 \arguments{
 \item{x}{\eqn{x}-values where periodic B-splines are to be evaluated.}
-\item{xd}{domain knot sequence for periodic B-splines (\code{length(xd) >= d + 1} required).}
-\item{d}{B-spline order (\eqn{d \ge 2} required).}
+\item{xd}{domain knot sequence for periodic B-splines (\code{length(xd) >= d + 1}).}
+\item{d}{B-spline order (\eqn{d \ge 2}).}
 \item{nDeriv}{derivative order.}
 \item{sparse}{if TRUE, create a sparse design matrix of "dgCMatrix" class.}
-\item{wrap}{TRUE to}
+\item{wrap}{if TRUE, the knots wrapping strategy is used; if FALSE, the linear constraint strategy is used.}
 }
 
 \details{

@@ -3,11 +3,11 @@
 \alias{DemoNull}
 
 \title{
-Demonstrate null space of a P-spline
+Demonstrate the null space of P-splines
 }
 
 \description{
-Demonstrate the limiting behaviour of a P-spline at \eqn{\lambda = +\infty}. A cubic P-spline set up with non-uniform B-splines and 2nd order difference penalty is fitted to observations simulated from \eqn{y = x}. If this P-spline has the correct null space, its limiting fit will be a straight line regardless of knot locations. In this demo, non-uniform knots from different distributions (primarily Beta distributions with varying shape parameters) are attempted. The result shows that when handling non-uniform B-splines, standard P-spline has an incorrect and unpredictable limiting behavior that is sensitive to knot locations, whereas general P-spline has a correct and consistent limiting behavior.
+Cubic P-splines set up with non-uniform B-splines and a 2nd order standard or general difference penalty are fitted to observations simulated from \eqn{y = x}. Should the resulting standard or general P-splines have the correct null space, the limiting fit at \eqn{\lambda = +\infty} will be a straight line regardless of knot locations. In this demo, non-uniform knots from different distributions (primarily Beta distributions with varying shape parameters) are attempted. Results show that standard P-splines have an incorrect and unpredictable limiting behavior that is sensitive to knot locations, whereas general P-splines have a correct and consistent limiting behavior.
 }
 
 \usage{
@@ -17,7 +17,7 @@ DemoNull(n, k, gps = FALSE)
 \arguments{
 \item{n}{number of simulated observations from \eqn{y = x}.}
 \item{k}{number of interior knots to place.}
-\item{gps}{TRUE to fit general P-spline; FALSE to fit standard P-spline.}
+\item{gps}{if TRUE, fit general P-splines; if FALSE, fit standard P-splines.}
 }
 
 \value{
@@ -31,9 +31,9 @@ Zheyuan Li \email{zheyuan.li@bath.edu}
 \examples{
 require(gps)
 
-## standard P-spline
+## standard P-splines
 DemoNull(n = 100, k = 10, gps = FALSE)
 
-## general P-spline
+## general P-splines
 DemoNull(n = 100, k = 10, gps = TRUE)
 }

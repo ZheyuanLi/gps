@@ -3,11 +3,11 @@
 \alias{MakeGrid}
 
 \title{
-Make a grid on the domain
+Make a grid of \eqn{x}-values between domain knots
 }
 
 \description{
-Place equidistant grid points on each knot span to make a grid on the domain, suitable for evaluating B-splines.
+Place equidistant grid points on each knot span to produce a grid of \eqn{x}-values between domain knots, suitable for evaluating B-splines.
 }
 
 \usage{

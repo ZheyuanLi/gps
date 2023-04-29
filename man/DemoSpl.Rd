@@ -3,11 +3,11 @@
 \alias{DemoSpl}
 
 \title{
-Demonstrate polynomial spline and its B-spline representation
+Demonstrate a polynomial spline and its B-spline representation
 }
 
 \description{
-Demonstrate cubic spline and its B-spline representation.
+Demonstrate a cubic spline and its B-spline representation.
 }
 
 \usage{
@@ -15,11 +15,11 @@ DemoSpl(uniform = TRUE)
 }
 
 \arguments{
-\item{uniform}{TRUE for uniform knots and FALSE for non-uniform knots.}
+\item{uniform}{if TRUE, place uniform knots; if FALSE, place non-uniform knots.}
 }
 
 \value{
-A list giving domain knots, B-spline coefficients and piecewise polynomial coefficients.
+A list giving domain knots, B-spline coefficients and piecewise polynomial coefficients of the illustrated cubic spline.
 }
 
 \author{
@@ -29,9 +29,9 @@ Zheyuan Li \email{zheyuan.li@bath.edu}
 \examples{
 require(gps)
 
-## cubic spline with uniform knots
+## a cubic spline with uniform knots
 DemoSpl(uniform = TRUE)
 
-## cubic spline with non-uniform knots
+## a cubic spline with non-uniform knots
 DemoSpl(uniform = FALSE)
 }
