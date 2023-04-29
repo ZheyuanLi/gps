@@ -22,4 +22,5 @@ remotes::install_github("ZheyuanLi/gps")
 # Vignette
 
 R code for [Li and Cao (2022)](https://arxiv.org/abs/2201.06808) is at: https://github.com/ZheyuanLi/gps-vignettes/blob/main/gps1.pdf
+
 R code for [Li and Cao (2023)](https://doi.org/10.1007/s11222-022-10178-z) is at: https://github.com/ZheyuanLi/gps-vignettes/blob/main/gps2.pdf
