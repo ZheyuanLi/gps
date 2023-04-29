@@ -59,19 +59,16 @@ LTB2Csparse <- function (L, k = n, symmetric = FALSE) {
   }
 }
 
+LTB2Dense <- function (L, k) {
+  .Call("C_LTB2Dense", L, k, PACKAGE = "gps")
+}
 
-SolveLTB <- function (transA, A, b, overwrite = FALSE) {
-  if (!is.logical(transA)) stop("'transA' is not logical!")
+SolveLTB <- function (transA = FALSE, A, b, overwrite = FALSE) {
   .Call("C_SolveLTB", transA, A, b, overwrite, PACKAGE = "gps")
 }
 
 LPBTRF <- function (A, overwrite = FALSE) {
-  X <- .Call("C_LPBTRF", A, overwrite, PACKAGE = "gps")
-  i <- attr(X, "i")
-  if (i > 0) {
-    stop(sprintf("The leading minor of order %d is not positive definite!", i))
-  }
-  SetAttr(X, "i", NULL)
+  .Call("C_LPBTRF", A, overwrite, PACKAGE = "gps")
 }
 
 DDt <- function (Dt) {
@@ -82,16 +79,15 @@ DtD <- function (Dt) {
   .Call("C_DtD", Dt, PACKAGE = "gps")
 }
 
-IsAscending <- function (x, n = length(x), xi = 1L) {
-  if (!is.double(x)) stop("'x' is not in double-precision mode!")
-  .Call("C_IsAscending", x, n, xi, PACKAGE = "gps") > 0L
+IsMonoInc <- function (x, n = length(x), xi = 1L) {
+  .Call("C_IsMonoInc", x, n, xi, PACKAGE = "gps") > 0L
 }
 
 MonoKnots <- function (xt, d) {
   xt <- as.double(xt)
   K <- length(xt)
   if (K < 2 * d) stop("length(xt) >= 2 * d required!", call. = FALSE)
-  flag <- IsAscending(xt, n = K - 2 * (d - 1), xi = d)
+  flag <- IsMonoInc(xt, n = K - 2 * (d - 1), xi = d)
   if (!flag) stop("Domain knots are not strictly ascending!", call. = FALSE)
   lbnd <- xt[seq.int(from = 1L, length.out = d)]
   rbnd <- xt[seq.int(to = K, length.out = d)]
@@ -133,7 +129,7 @@ PlaceKnots <- function (x, d, k, domain = NULL, uniform = FALSE, periodic = FALS
 
 MakeGrid <- function (xd, n, rm.dup = FALSE) {
   xd <- as.double(xd)
-  if (!IsAscending(xd)) stop("'xd' is not strictly ascending!")
+  if (!IsMonoInc(xd)) stop("'xd' is not strictly ascending!")
   if (n == 1) {
     lp <- xd[-length(xd)]
     rp <- xd[-1]
@@ -155,7 +151,7 @@ Zero2NA <- function (Bsparse) {
   B
 }
 
-ExampleBS <- function (d = 4, uniform = TRUE, clamped = FALSE) {
+ExBS <- function (d = 4, uniform = TRUE, clamped = FALSE) {
   if (d < 2 || d > 4) stop("d = 2, 3, 4 required!", call. = FALSE)
   if (uniform) {
     lbnd <- as.double(seq.int(to = -1, length.out = 4, by = 2))
@@ -179,7 +175,7 @@ ExampleBS <- function (d = 4, uniform = TRUE, clamped = FALSE) {
   list(xt = xt, clamped = clamped, d = d, x = x, B = B)
 }
 
-PlotExampleBS <- function (object) {
+PlotExBS <- function (object) {
   xt <- object$xt
   d <- object$d
   x <- object$x
@@ -238,9 +234,9 @@ DemoBS <- function (uniform = TRUE, clamped = FALSE) {
   if (uniform && clamped) {
     warning("uniform = TRUE implies clamped = FALSE!")
   }
-  spl3 <- ExampleBS(d = 4, uniform, clamped)
-  spl2 <- ExampleBS(d = 3, uniform, clamped)
-  spl1 <- ExampleBS(d = 2, uniform, clamped)
+  spl3 <- ExBS(d = 4, uniform, clamped)
+  spl2 <- ExBS(d = 3, uniform, clamped)
+  spl1 <- ExBS(d = 2, uniform, clamped)
   if (uniform) {
     caption <- "uniform B-splines"
   } else if (clamped) {
@@ -250,9 +246,9 @@ DemoBS <- function (uniform = TRUE, clamped = FALSE) {
   }
   op <- par(mfrow = c(3, 1), mar = c(2, 0.75, 0, 0.75), oma = c(0, 0, 2, 0))
   on.exit(par(op))
-  PlotExampleBS(spl3)
-  PlotExampleBS(spl2)
-  PlotExampleBS(spl1)
+  PlotExBS(spl3)
+  PlotExBS(spl2)
+  PlotExBS(spl1)
   title(caption, outer = TRUE, cex.main = 1.5)
 }
 
@@ -324,10 +320,11 @@ PlotNull <- function (x, y, k, shape1 = 3, shape2 = 3, gps = FALSE) {
   B <- splines::splineDesign(xt, x, d, sparse = TRUE)
   Bg <- splines::splineDesign(xt, xg, d, sparse = TRUE)
   if (gps) {
-    H <- NullD(xt, d, m)
+    ld <- ComputeLD(xt, d)
   } else {
-    H <- NullD(seq.int(0, 1, length.out = K), d, m)
+    ld <- matrix(1, k + d, d - 1)
   }
+  H <- NullGD(ld, m, orthonormal = FALSE)
   X <- as_matrix(B %*% H)
   Xg <- as_matrix(Bg %*% H)
   XtX <- base::crossprod(X)
@@ -607,17 +604,10 @@ CheckSupp <- function (x, xt, d) {
   .Call("C_CheckSupp", ni, d, PACKAGE = "gps") > 0L
 }
 
-gps2Setup <- function (x, xt, d, m, deriv.pen = FALSE, boundary = "none",
-                       unique.x.provided = FALSE) {
+gps2bspl <- function (x, xt, d, m, gps = TRUE, periodic = FALSE,
+                      unique.x.provided = FALSE) {
   if (d < 2) stop("d >= 2 required!", call. = FALSE)
   if (m < 1 || m > d - 1) stop("1 <= m <= d - 1 required!", call. = FALSE)
-  if (is.na(match(boundary, c("none", "natural", "periodic")))) {
-    stop("Unknown type of boundary constraint!", call. = FALSE)
-  }
-  if ((boundary == "natural") && (d %% 2 > 0)) {
-    stop("Natural boundary constraint is only for B-splines of even order!",
-         call. = FALSE)
-  }
   xt <- MonoKnots(xt, d)
   p <- length(xt) - d
   xu <- if (unique.x.provided) x else unique.default(x)
@@ -628,32 +618,19 @@ gps2Setup <- function (x, xt, d, m, deriv.pen = FALSE, boundary = "none",
     stop("There are no x-values on some B-spline's support!", call. = FALSE)
   }
   B <- splines::splineDesign(xt, x, d, sparse = TRUE)
-  if (deriv.pen) {
-    D <- SparseS(xt, d, m, root = TRUE)
-  } else {
-    D <- SparseD(xt, d)[[m]]
-  }
+  D <- SparseD(xt, d, m, gps)[[1L]]
   Dt <- Csparse2LTB(D)
   S <- DtD(Dt)
   if (ncol(S) > p) S <- S[, 1:p]
-  a <- xt[d]
-  b <- xt[p + 1]
-  if (boundary == "natural" && d > 2) {
-    m0 <- d / 2
-    nc <- m0 - 1
-    nDeriv <- seq.int(m0, length.out = nc)
-    Ca <- splines::splineDesign(xt, rep.int(a, nc), d, nDeriv)
-    Cb <- splines::splineDesign(xt, rep.int(b, nc), d, nDeriv)
-    C <- rbind(Ca, Cb)
-  } else if (boundary == "periodic") {
+  if (periodic) {
     C <- GetPBC(xt, d, compact = FALSE, sparse = FALSE)
   } else {
     C <- matrix(0, nrow = 0, ncol = p)
   }
-  list(B = B, Dt = Dt, S = S, xt = xt, d = d, m = m, boundary = boundary, C = C)
+  list(B = B, Dt = Dt, S = S, xt = xt, d = d, m = m, C = C)
 }
 
-gps2Reduce <- function (bspl, y, w = NULL, divide.n = FALSE) {
+gps2red <- function (bspl, y, w = NULL, scalePen = TRUE) {
   y <- as.double(y)
   X <- bspl$B
   n <- X@Dim[1L]
@@ -665,99 +642,364 @@ gps2Reduce <- function (bspl, y, w = NULL, divide.n = FALSE) {
     X@x <- w[X@i + 1L] * X@x
     y <- w * y
   }
+  if (scalePen) {
+    scalePen.fctr <- VecDot(X@x) / VecDot(bspl$Dt)
+    Dt <- VecScal(sqrt(scalePen.fctr), bspl$Dt, overwrite = FALSE)
+    S <- VecScal(scalePen.fctr, bspl$S, overwrite = FALSE)
+  } else {
+    scalePen.fctr <- 1
+    Dt <- bspl$Dt
+    S <- bspl$S
+  }
   Z <- Matrix::crossprod(X)
   z <- Matrix::crossprod(X, y)@x
   Z <- Csparse2LTB(Z)
-  if (divide.n) {
-    Z <- VecScal(1 / n, Z, overwrite = TRUE)
-    z <- VecScal(1 / n, z, overwrite = TRUE)
-  }
   L <- try(LPBTRF(Z, overwrite = FALSE), silent = TRUE)
   if (inherits(L, "try-error")) {
     stop("B-spline design matrix does not have full column rank!")
   }
   f <- SolveLTB(transA = FALSE, L, z, overwrite = FALSE)
-  if (divide.n) {
-    minRSS <- VecDot(y) / n - VecDot(f)
-  } else {
-    minRSS <- VecDot(y) - VecDot(f)
-  }
-  E <- .Call("C_FormE", L, bspl$Dt, PACKAGE = "gps")
-  list(divide.n = divide.n, n = n, Z = Z, z = z, L = L, f = f, minRSS = minRSS, E = E)
+  minRSS <- VecDot(y) - VecDot(f)
+  E <- .Call("C_FormE", L, Dt, PACKAGE = "gps")
+  list(n = n, Z = Z, z = z, L = L, f = f, minRSS = minRSS,
+       scalePen.fctr = scalePen.fctr, Dt = Dt, S = S, E = E)
 }
 
-
-gps2Eigen <- function (bspl, red, tol = 1e-6) {
+gps2DR <- function (red, tol = 1e-6) {
   t0 <- Sys.time()
   q <- ncol(red$E)
-  MEAN <- .Call("C_MeanEigen", red$E, PACKAGE = "gps")
-  MIN <- .Call("C_MinEigen", red$E, tol, PACKAGE = "gps")
-  MAX <- .Call("C_MaxEigen", red$L, bspl$Dt, tol, PACKAGE = "gps")
-  values <- .Call("C_ApproxEigen", q, MIN, MAX, MEAN, tol, PACKAGE = "gps")
+  dbar <- .Call("C_MeanDR", red$E, PACKAGE = "gps")
+  dq <- .Call("C_MinDR", red$E, tol, PACKAGE = "gps")
+  d1 <- .Call("C_MaxDR", red$L, red$Dt, tol, PACKAGE = "gps")
+  dq.cutoff <- d1 * (.Machine$double.eps / 2)
+  if (dq < dq.cutoff) {
+    dq <- dq.cutoff
+    warning("The smallest eigenvalue is erratic as E'E is numerically singular!")
+  }
+  approx.DR <- .Call("C_ApproxDR", q, dq, d1, dbar, tol, PACKAGE = "gps")
   t1 <- Sys.time()
   secs <- difftime(t1, t0, units = "secs")[[1L]]
-  list(mean = MEAN, min = MIN, max = MAX, approx.values = values, secs = secs)
+  list(mean = dbar, min = dq, max = d1, approx.values = approx.DR, secs = secs)
 }
 
-gps2RhoLim <- function (ei, epsilon = 0.01) {
-  lam.min <- epsilon / (1 - epsilon) / ei$mean
-  rho.min <- log(lam.min)
-  lam.max <- (1 - epsilon) / epsilon / ei$min[[1L]]
-  rho.max <- log(lam.max)
-  values <- ei$approx.values
-  edf <- length(values) * epsilon
-  MaxNewton <- 0.25 * (rho.max - rho.min)
-  tol <- 1e-6
-  x <- .Call("C_EDF2Rho", values, edf, rho.max, MaxNewton, tol, PACKAGE = "gps")
-  list(min = rho.min, max.adj = 0.5 * (rho.max + x), max = rho.max)
-}
-
-DReigen <- function (E) {
+ExactDR <- function (E) {
   t0 <- Sys.time()
   A <- .Call("C_LAUUM", E, PACKAGE = "gps")
-  values <- base::eigen(A, symmetric = TRUE, only.values = TRUE)$values
+  exact.DR <- base::eigen(A, symmetric = TRUE, only.values = TRUE)$values
+  q <- length(exact.DR)
+  d1 <- exact.DR[1L]
+  dq.cutoff <- d1 * (.Machine$double.eps / 2)
+  ind <- which(exact.DR < dq.cutoff)
+  if (length(ind)) {
+    exact.DR[ind] <- dq.cutoff
+    warning("Small eigenvalues are erratic as E'E is numerically singular!")
+  }
   t1 <- Sys.time()
   secs <- difftime(t1, t0, units = "secs")[[1L]]
-  list(values = values, secs = secs)
+  list(values = exact.DR, secs = secs)
 }
 
-Rho2EDF <- function (values, rho) {
-  .Call("C_Rho2EDF", values, rho, PACKAGE = "gps")
+Rho2REDF <- function (DR, rho) {
+  .Call("C_Rho2REDF", DR, rho, PACKAGE = "gps")
 }
 
-GridPLS <- function (bspl, red, rho) {
-  Ct <- t.default(bspl$C)
-  .Call("C_GridPLS", red$Z, red$L, bspl$S, red$z, Ct, rho, PACKAGE = "gps")
+REDF2Rho <- function (DR, redf, rho0, MaxNewton, tol = 1e-6) {
+  .Call("C_REDF2Rho", DR, redf, rho0, MaxNewton, tol, PACKAGE = "gps")
 }
 
-GridGCV <- function (red, pls) {
-  gcv <- .Call("C_GridGCV", red$n, red$L, red$f, red$minRSS, pls$beta, pls$edf,
-               PACKAGE = "gps")
-  if (red$divide.n) gcv <- gcv * red$n
-  gcv
-}
-
-gps2Grid <- function (x, y, w = NULL, xt, d = 4, m = 2, deriv.pen = FALSE,
-                      boundary = "none", ng = 20) {
-  bspl <- gps2Setup(x, xt, d, m, deriv.pen, boundary)
-  red <- gps2Reduce(bspl, y, w, divide.n = TRUE)
-  ei <- gps2Eigen(bspl, red)
-  rho.lim <- gps2RhoLim(ei)
-  if (ng > 0) {
-    rho <- seq.int(rho.lim$min, rho.lim$max.adj, length.out = ng)
-    t0 <- Sys.time()
-    pls <- GridPLS(bspl, red, rho)
-    pls$gcv <- GridGCV(red, pls)
-    t1 <- Sys.time()
-    pls$secs <- difftime(t1, t0, units = "secs")[[1L]]
+gps2RhoLim <- function (DR, kappa = 0.01) {
+  lam.min <- kappa / (1 - kappa) / DR$mean
+  rho.min <- log(lam.min)
+  lam.max <- (1 - kappa) / kappa / DR$min
+  rho.max <- log(lam.max)
+  approx.DR <- DR$approx.values
+  if (is.na(approx.DR[1L])) {
+    rho.max.heuristic <- NA_real_
   } else {
-    pls <- NULL
+    redf <- length(approx.DR) * kappa
+    rho.mid <- 0.5 * (rho.min + rho.max)
+    MaxNewton <- 0.25 * (rho.max - rho.min)
+    rho.max.heuristic <- REDF2Rho(approx.DR, redf, rho.mid, MaxNewton)
+  }
+  list(min = rho.min, max = rho.max, max.heuristic = rho.max.heuristic)
+}
+
+Q1fun <- function (z, a = 0, b = 1) {
+  if (a >= b) stop("a < b required!")
+  h <- z * z - z
+  theta <- exp(a + (b - a) * z)
+  bounds <- c(0, b - a)
+  list(h = h, theta = theta, bounds = bounds)
+}
+
+Q2fun <- function (z, a = 0, b = 1) {
+  if (a >= b) stop("a < b required!")
+  y <- 1 - z
+  B0 <- y * y * y
+  B1 <- 3 * z * y * y
+  B2 <- 3 * z * z * y
+  B3 <- z * z * z
+  h <- B1 - B2
+  theta <- exp((B0 + B2) * a + (B2 + B3) * b)
+  bounds <- c(a, (2 * a + b) / 3)
+  list(h = h, theta = theta, bounds = bounds)
+}
+
+map01 <- function (x) (1 / (x[1L] - x[length(x)])) * (x - x[length(x)])
+
+ApproxDR <- function (DR, Qfun, gamma.grid = seq.int(0, 1, 0.05), verbose = TRUE) {
+  if (!is.function(Qfun)) stop("'Qfun' is not a function!")
+  Qz <- Qfun(z = 0.5, a = 0, b = 1)
+  if (anyNA(match(c("h", "theta", "bounds"), names(Qz)))) {
+    stop("'Qfun' needs to return elements 'h', 'theta' and 'bounds'!")
+  }
+  q <- length(DR)
+  a <- log(DR[q])
+  b <- log(DR[1L])
+  dbar <- sum(DR) / q
+  logDR <- map01(log(DR))
+  step <- 1 / (q + 1)
+  p <- seq.int(from = step, by = step, length.out = q)
+  aggregated.DR <- numeric(q)
+  success <- 0
+  op <- par(mfrow = c(1, 2), mar = c(2, 2, 1.5, 0.5))
+  on.exit(par(op))
+  for (gamma in gamma.grid) {
+    z <- map01(log(1 - p) - gamma * log(p))
+    zlab <- sprintf("z(%.2f)", gamma)
+    Qz <- Qfun(z, a, b)
+    plot.default(p, logDR, type = "l", ann = FALSE)
+    lines.default(p, z, lty = 2)
+    title(sprintf("log(d) and %s", zlab))
+    plot.default(z, logDR, type = "l", ann = FALSE)
+    title(sprintf("log(d) ~ %s", zlab))
+    theta <- Qz$theta
+    h <- Qz$h
+    eta <- theta * h
+    bounds <- Qz$bounds
+    tmpDR <- .Call("C_RootApproxDR", theta, h, eta, dbar, bounds, PACKAGE = "gps")
+    if (tmpDR[1L]) {
+      success <- success + 1
+      aggregated.DR <- aggregated.DR + tmpDR
+      lines.default(z, map01(log(tmpDR)), lty = 2)
+    }
+    if (verbose) readline("Hit <Enter> to continue: ")
+    if (success && tmpDR[1L] == 0) break
+  }
+  list(success = success, aggregated.DR = aggregated.DR, gamma.exit = gamma)
+}
+
+DemoApproxDR <- function (DR, Qfun = NULL, verbose = TRUE) {
+  gamma.grid <- seq.int(0, 1, 0.05)
+  if (is.null(Qfun)) {
+    out1 <- ApproxDR(DR, Q1fun, gamma.grid, verbose)
+    gamma.exit <- out1$gamma.exit
+    if (gamma.exit < 1) {
+      gamma.grid <- seq.int(gamma.exit, 1, 0.05)
+    } else {
+      gamma.grid <- numeric(0)
+    }
+    out2 <- ApproxDR(DR, Q2fun, gamma.grid, verbose)
+    success <- out1$success + out2$success
+    approx.DR <- (out1$aggregated.DR + out2$aggregated.DR) / success
+  } else {
+    out <- ApproxDR(DR, Qfun, gamma.grid, verbose)
+    success <- out$success
+    approx.DR <- out$aggregated.DR / success
+  }
+  if (success) {
+    op <- par(mfrow = c(1, 2), mar = c(2, 2, 1.5, 0.5))
+    on.exit(par(op))
+    q <- length(DR)
+    step <- 1 / (q + 1)
+    p <- seq.int(from = step, by = step, length.out = q)
+    logDR <- map01(log(DR))
+    result <- list(min = DR[q], mean = sum(DR) / q, approx.values = approx.DR)
+    rho.lim <- gps2RhoLim(result)
+    rho.grid <- seq.int(rho.lim$min, rho.lim$max, length.out = 100)
+    redf <- Rho2REDF(DR, rho.grid)
+    approx.redf <- Rho2REDF(approx.DR, rho.grid)
+    redf.heuristic <- Rho2REDF(DR, rho.lim$max.heuristic)
+    mapping <- sprintf("loose: %.2f -> %.2f\nheuristic: %.2f -> %.2f",
+                       rho.lim$max, redf[100L], rho.lim$max.heuristic, redf.heuristic)
+    plot.default(p, logDR, type = "l", ann = FALSE)
+    lines.default(p, map01(log(approx.DR)), lty = 2)
+    title("log(d)")
+    plot.default(rho.grid, redf, type = "l", ann = FALSE)
+    lines.default(rho.grid, approx.redf, lty = 2)
+    points.default(rho.lim$max.heuristic, redf.heuristic, pch = 19)
+    text.default(rho.lim$max, redf[1L], labels = mapping, adj = c(1, 1))
+    title("redf ~ rho")
+  } else {
+    warning("Unable to approximate Demmler-Reinsch eigenvalues!")
+  }
+}
+
+GridPWLS <- function (bspl, red, rho) {
+  .Call("C_GridPWLS", red$Z, red$L, red$S, red$z, t.default(bspl$C), rho,
+        PACKAGE = "gps")
+}
+
+GridGCV <- function (red, pwls) {
+  .Call("C_GridGCV", red$n, red$L, red$f, red$minRSS, pwls$beta, pwls$edf,
+        PACKAGE = "gps")
+}
+
+gps2GS <- function (x, y, w = NULL, xt, d = 4, m = 2, gps = TRUE,
+                    periodic = FALSE, ng = 20, scalePen = TRUE) {
+  bspl <- gps2bspl(x, xt, d, m, gps, periodic)
+  red <- gps2red(bspl, y, w, scalePen)
+  DR <- gps2DR(red)
+  rho.lim <- gps2RhoLim(DR)
+  if (ng > 0) {
+    if (is.na(rho.lim$max.heuristic)) {
+      rho <- seq.int(rho.lim$min, rho.lim$max, length.out = ng)
+    } else {
+      rho <- seq.int(rho.lim$min, rho.lim$max.heuristic, length.out = ng)
+    }
+    t0 <- Sys.time()
+    pwls <- GridPWLS(bspl, red, rho)
+    pwls$gcv <- GridGCV(red, pwls)
+    t1 <- Sys.time()
+    pwls$secs <- difftime(t1, t0, units = "secs")[[1L]]
+  } else {
+    pwls <- NULL
   }
   S <- LTB2Csparse(bspl$S, symmetric = TRUE)
   BWB <- LTB2Csparse(red$Z, symmetric = TRUE)
-  eqn <- list(B = bspl$B, S = S, BWB = BWB, BWy = red$z,
-              boundary = boundary, C = bspl$C)
-  list(eqn = eqn, eigen = ei, rho.lim = rho.lim, E = red$E, pls = pls)
+  eqn <- list(B = bspl$B, BWB = BWB, BWy = red$z,
+              omega = red$scalePen.fctr, S = S, C = bspl$C)
+  list(eqn = eqn, eigen = DR, rho.lim = rho.lim, E = red$E, pwls = pwls)
+}
+
+DemoRhoLim <- function (fit, plot = TRUE) {
+  DR <- ExactDR(fit$E)
+  approx.DR <- fit$eigen[c("approx.values", "secs")]
+  names(approx.DR) <- c("values", "secs")
+  q <- length(DR$values)
+  rho.min.star <- fit$rho.lim$min
+  rho.max.star <- fit$rho.lim$max
+  redf.min <- 0.01 * q
+  redf.max <- 0.99 * q
+  rho.mid <- (rho.min.star + rho.max.star) / 2
+  MaxNewton <- 0.25 * (rho.max.star - rho.min.star)
+  rho.min <- REDF2Rho(DR$values, redf.max, rho.mid, MaxNewton)
+  rho.max <- REDF2Rho(DR$values, redf.min, rho.mid, MaxNewton)
+  ng <- 100L
+  rho.grid <- seq.int(rho.min.star, rho.max.star, length.out = ng)
+  redf.exact <- Rho2REDF(DR$values, rho.grid)
+  redf.min.star <- redf.exact[ng]
+  redf.max.star <- redf.exact[1L]
+  rho.max.heuristic <- fit$rho.lim$max.heuristic
+  if (is.na(rho.max.heuristic)) {
+    redf.approx <- rep.int(NA_real_, ng)
+    redf.min.heuristic <- NA_real_
+    warning("No approximated eigenvalues and heuristic upper bound for 'rho'!")
+  } else {
+    redf.approx <- Rho2REDF(approx.DR$values, rho.grid)
+    redf.min.heuristic <- Rho2REDF(DR$values, rho.max.heuristic)
+  }
+  map.exact <- sprintf("[%.1f, %.1f] -> [%.1f, %.1f]",
+                       rho.min, rho.max, redf.min, redf.max)
+  map.wider <- sprintf("[%.1f, %.1f] -> [%.1f, %.1f]",
+                       rho.min.star, rho.max.star, redf.min.star, redf.max.star)
+  map.heuristic <- sprintf("%.1f -> %.1f", rho.max.heuristic, redf.min.heuristic)
+  if (plot) {
+    op <- par(mfrow = c(1, 2), mar = c(2, 2, 1.5, 0.5))
+    on.exit(par(op))
+    p <- (1:q) / (q + 1)
+    plot.default(p, log(DR$values), type = "l", ann = FALSE)
+    lines.default(p, log(approx.DR$values), lty = 2)
+    text.default(p[q], log(DR$values[1L]), adj = c(1, 1),
+                 labels = sprintf("exact: solid\napprox: dashed"))
+    title("log eigenvalues")
+    plot.default(rho.grid, redf.exact, type = "l", ann = FALSE)
+    lines.default(rho.grid, redf.approx, lty = 2)
+    segments(rho.min, q, rho.min, 0.75 * q, col = 8, lty = 2)
+    segments(rho.max, 0, rho.max, 0.25 * q, col = 8, lty = 2)
+    points.default(rho.max.heuristic, redf.min.heuristic, pch = 19)
+    text.default(rho.max.star, redf.max.star, adj = c(1, 1),
+                 labels = sprintf("exact: %s\nwider: %s\nheuristic: %s",
+                                  map.exact, map.wider, map.heuristic))
+    title("redf ~ rho")
+  }
+  eigen <- list(approx = approx.DR, exact = DR)
+  limit <- list(rho = list(exact = c(rho.min, rho.max),
+                           wider = c(rho.min.star, rho.max.star),
+                           heuristic = rho.max.heuristic),
+                redf = list(exact = c(redf.min, redf.max),
+                            wider = c(redf.min.star, redf.max.star),
+                            heuristic = redf.min.heuristic))
+  mapping <- list(exact = map.exact, wider = map.wider, heuristic = map.heuristic)
+  redf <- list(rho = rho.grid, exact = redf.exact, approx = redf.approx)
+  list(eigen = eigen, limit = limit, mapping = mapping, redf = redf)
+}
+
+
+Diff <- function (x, k = 1L, n = length(x), xi = 1L) {
+  .Call("C_Diff", x, k, n, xi, PACKAGE = "gps")
+}
+
+SparseDelta <- function (r) {
+  r <- as.integer(r)
+  x <- rep.int(c(-1, 1), r)
+  i <- rep(seq.int(0L, r - 1L), each = 2L)
+  p <- c(0L, seq.int(1L, length.out = r, by = 2L), 2L * r)
+  methods::new("dgCMatrix", i = i, p = p, Dim = c(r, r + 1L), x = x)
+}
+
+SparseWtDelta <- function (h) {
+  r <- length(h)
+  x <- rep.int(c(-1, 1), r) * rep(1 / h, each = 2)
+  i <- rep(seq.int(0L, r - 1L), each = 2L)
+  p <- c(0L, seq.int(1L, length.out = r, by = 2L), 2L * r)
+  methods::new("dgCMatrix", i = i, p = p, Dim = c(r, r + 1L), x = x)
+}
+
+SparseGD <- function (xt, d, m) {
+  K <- length(xt)
+  D <- vector("list", m)
+  h <- Diff(x = xt, k = d - 1L, n = K - 2L, xi = 2L)
+  D[[1L]] <- SparseWtDelta(h)
+  i <- 2L
+  while (i <= m) {
+    h <- Diff(x = xt, k = d - i, n = K - 2L * i, xi = i + 1L)
+    D[[i]] <- SparseWtDelta(h) %*% D[[i - 1L]]
+    i <- i + 1L
+  }
+  D
+}
+
+DiffCoef <- function (b, xt, d, m) {
+  if (d < 2) stop("d >= 2 required!", call. = FALSE)
+  if (m < 1 || m >= d) stop("1 <= m <= d - 1 required!", call. = FALSE)
+  xt <- MonoKnots(xt, d)
+  K <- length(xt)
+  if (length(b) != K - d) {
+    stop("length(b) == length(xt) - d required!", call. = FALSE)
+  }
+  b <- as.double(b)
+  for (i in 1:m) {
+    h <- Diff(x = xt, k = d - i, n = K - 2L * i, xi = i + 1L)
+    b <- Diff(b) / h
+  }
+  b
+}
+
+ComputeLD <- function (xt, d) {
+  .Call("C_ComputeLD", xt, d, PACKAGE = "gps")
+}
+
+NullGD <- function (ld, m = 1, orthonormal = TRUE) {
+  basis <- .Call("C_NullGD", ld, m, PACKAGE = "gps")
+  if (orthonormal && (m > 1)) {
+    Q <- qr.Q(qr.default(basis[, m:1]))[, m:1]
+    i <- sequence.default(1:(m - 1))
+    j <- rep.int(2:m, 1:(m - 1))
+    Q[cbind(i, j)] <- 0
+    basis <- Q
+  }
+  basis
 }
 
 
@@ -791,42 +1033,142 @@ SbarBlocks <- function (xt, d, m) {
   .Call("C_SbarBlocks", xd, W, B@x, PACKAGE = "gps")
 }
 
-SparseSbar <- function (xt, d, m, do.chol = FALSE) {
-  blocks <- SbarBlocks(xt, d, m)
-  if (d - m == 1) {
-    if (do.chol) blocks <- sqrt(blocks)
-    return(blocks)
-  }
-  LTB <- .Call("C_SbarLTB", blocks, do.chol, PACKAGE = "gps")
-  LTB2Csparse(LTB, symmetric = !do.chol)
-}
-
-SandBar <- function (xt, d, m) {
-  Sbar <- SparseSbar(xt, d, m)
-  if (d - m == 1) {
-    q <- length(Sbar)
-    Sbar <- methods::new("ddiMatrix", diag = "N", x = Sbar, Dim = c(q, q))
-  }
-  Sbar
-}
-
-SparseS <- function (xt, d, m, root = FALSE) {
-  if (m == 0) return(SparseSbar(xt, d, 0, do.chol = root))
-  L <- SparseSbar(xt, d, m, do.chol = TRUE)
-  D <- SparseD(xt, d)[[m]]
-  if (d - m == 1) {
-    K <- D
-    K@x <- L[D@i + 1L] * D@x
-  } else {
-    K <- Matrix::crossprod(L, D)
-  }
-  if (root) K else Matrix::crossprod(K)
+GramBS <- function (xt, d) {
+  blocks <- SbarBlocks(xt, d, m = 0)
+  LTB <- .Call("C_SbarLTB", blocks, PACKAGE = "gps")
+  LTB2Csparse(LTB, symmetric = TRUE)
 }
 
 btSb <- function (b, xt, d, m) {
   db <- DiffCoef(b, xt, d, m)
   blocks <- SbarBlocks(xt, d, m)
   .Call("C_btSb", blocks, db, PACKAGE = "gps")
+}
+
+
+SparseD <- function (xt, d, m = NULL, gps = TRUE) {
+  d <- as.integer(d)
+  if (d < 2L) stop("d >= 2 required!", call. = FALSE)
+  if (is.null(m)) {
+    m <- seq_len(d - 1L)
+  } else {
+    m <- sort.int(as.integer(m), method = "radix")
+  }
+  m.min <- m[1L]
+  m.max <- m[length(m)]
+  if (m.min < 1L || m.max >= d) {
+    stop("1 <= m <= d - 1 required!", call. = FALSE)
+  }
+  NAMES <- sprintf("order.%d", m)
+  xt <- MonoKnots(xt, d)
+  D <- SparseGD(xt, d, m.max)
+  D <- D[m]
+  names(D) <- NAMES
+  if (gps) return(D)
+  nm <- length(m)
+  Sbar <- vector("list", nm); names(Sbar) <- NAMES
+  K <- vector("list", nm); names(K) <- NAMES
+  for (i in 1:nm) {
+    m_i <- m[i]
+    D_i <- D[[i]]
+    blocks <- SbarBlocks(xt, d, m_i)
+    if (is.array(blocks)) {
+      Sbar.LTB <- .Call("C_SbarLTB", blocks, PACKAGE = "gps")
+      Sbar.Matrix <- LTB2Csparse(Sbar.LTB, symmetric = TRUE)
+      L.LTB <- LPBTRF(Sbar.LTB, overwrite = TRUE)
+      L.Matrix <- LTB2Csparse(L.LTB)
+      K_i <- Matrix::crossprod(L.Matrix, D_i)
+    } else {
+      k1 <- length(blocks)
+      Sbar.Matrix <- methods::new("ddiMatrix", diag = "N", x = blocks, Dim = c(k1, k1))
+      L.diag <- sqrt(blocks)
+      newx <- L.diag[D_i@i + 1L] * D_i@x
+      K_i <- methods::new("dgCMatrix", i = D_i@i, p = D_i@p, Dim = D_i@Dim, x = newx)
+    }
+    Sbar[[i]] <- Sbar.Matrix
+    K[[i]] <- K_i
+  }
+  sandwich <- list(D = D, Sbar = Sbar)
+  structure(K, sandwich = sandwich)
+}
+
+
+
+PriorCoef1 <- function (n, D) {
+  q <- D@Dim[1L]
+  S <- as_matrix(Matrix::crossprod(D))
+  ei <- base::eigen(S, symmetric = TRUE)
+  qs <- seq_len(q)
+  d <- ei$values[qs]
+  U <- ei$vectors[, qs]
+  di <- 1 / d
+  e <- rnorm(n * q)
+  if (n > 1) e <- ChangeDim(e, c(q, n))
+  b <- U %*% (sqrt(di) * e)
+  if (n == 1) b <- c(b)
+  b
+}
+
+PriorCoef2 <- function (n, D) {
+  Dim <- D@Dim
+  q <- Dim[1L]
+  p <- Dim[2L]
+  m <- p - q
+  e <- rnorm(n * q)
+  if (n > 1) e <- ChangeDim(e, c(q, n))
+  Dt <- Csparse2LTB(D)
+  y <- SolveLTB(transA = TRUE, Dt, e, overwrite = TRUE)
+  R <- as_matrix(D[, seq.int(q + 1, p), drop = FALSE])
+  X <- SolveLTB(transA = TRUE, Dt, R, overwrite = TRUE)
+  XtX <- base::crossprod(X)
+  Xty <- base::crossprod(X, y)
+  U <- chol.default(XtX + diag(m))
+  f <- forwardsolve(U, Xty, upper.tri = TRUE, transpose = TRUE)
+  b <- backsolve(U, f)
+  r <- y - X %*% b
+  if (n > 1) rbind(r, b) else c(r, b)
+}
+
+PriorCoef <- function (n, D) {
+  PriorCoef2(n, D)
+}
+
+Dt2ThinQR <- function (Dt) {
+  A <- DDt(Dt)
+  Rt <- LPBTRF(A, overwrite = TRUE)
+  denseDt <- LTB2Dense(Dt, sum(dim(Dt)) - 1L)  ## does not work for O-spline
+  Qt <- SolveLTB(transA = FALSE, Rt, t.default(denseDt), overwrite = TRUE)
+  list(Qt = Qt, Rt = Rt)
+}
+
+MPinvUUt <- function (D, method = "qr") {
+  if (method == "qr") {
+    Dt <- Csparse2LTB(D)
+    QR <- Dt2ThinQR(Dt)
+    Qt <- QR$Qt
+    Rt <- QR$Rt
+    SolveLTB(transA = TRUE, Rt, Qt, overwrite = TRUE)
+  } else if (method == "eigen") {
+    q <- D@Dim[1L]
+    S <- as_matrix(Matrix::crossprod(D))
+    ei <- base::eigen(S, symmetric = TRUE)
+    qs <- seq_len(q)
+    d <- ei$values[qs]
+    Q <- ei$vectors[, qs]
+    di <- 1 / d
+    sqrt(di) * t.default(Q)
+  } else {
+    stop("'method' must be either \"qr\" or \"eigen\"!")
+  }
+}
+
+MPinv <- function (D, only.diag = FALSE) {
+  Ut <- MPinvUUt(D, method = "qr")
+  if (only.diag) {
+    base::colSums(Ut * Ut)
+  } else {
+    base::crossprod(Ut)
+  }
 }
 
 
@@ -915,7 +1257,7 @@ pbsDesign <- function (x, xd, d, nDeriv = 0, sparse = FALSE, wrap = TRUE) {
   degree <- d - 1L
   if (nDeriv < 0 || nDeriv > degree) stop("0 <= nDeriv <= d - 1 required!")
   xd <- as.double(xd)
-  if (!IsAscending(xd)) stop("'xd' is not strictly ascending!")
+  if (!IsMonoInc(xd)) stop("'xd' is not strictly ascending!")
   k2 <- length(xd)
   if (k2 <= d) stop("length(xd) >= d + 1 required!")
   a <- xd[1L]
@@ -1034,7 +1376,7 @@ SparsePD <- function (xd, d, wrap = TRUE) {
   if (d < 2L) stop("d >= 2 required!")
   degree <- d - 1L
   xd <- as.double(xd)
-  if (!IsAscending(xd)) stop("'xd' is not strictly ascending!")
+  if (!IsMonoInc(xd)) stop("'xd' is not strictly ascending!")
   k2 <- length(xd)
   if (k2 <= d) stop("length(xd) >= d + 1 required!")
   if (wrap) {
@@ -1081,124 +1423,6 @@ SparsePD2 <- function (xd, d) {
   PD
 }
 
-PriorCoef <- function (n, D) {
-  p <- ncol(D)
-  q <- nrow(D)
-  m <- p - q
-  e <- rnorm(n * q)
-  if (n > 1) e <- ChangeDim(e, c(q, n))
-  Dt <- Csparse2LTB(D)
-  y <- SolveLTB(transA = TRUE, Dt, e, overwrite = TRUE)
-  R <- as_matrix(D[, seq.int(q + 1, p), drop = FALSE])
-  X <- SolveLTB(transA = TRUE, Dt, R, overwrite = TRUE)
-  XtX <- base::crossprod(X)
-  Xty <- base::crossprod(X, y)
-  U <- chol.default(XtX + diag(m))
-  f <- forwardsolve(U, Xty, upper.tri = TRUE, transpose = TRUE)
-  b <- backsolve(U, f)
-  r <- y - X %*% b
-  if (n > 1) rbind(r, -b) else c(r, -b)
-}
-
-MPinverse <- function (D, diag.only = FALSE) {
-  q <- nrow(D)
-  p <- ncol(D)
-  S <- as_matrix(Matrix::crossprod(D))
-  ei <- base::eigen(S, symmetric = TRUE)
-  qs <- seq_len(q)
-  d <- ei$values[qs]
-  U <- ei$vectors[, qs]
-  R <- U * rep(sqrt(1 / d), each = p)
-  if (diag.only) {
-    rowSums(R * R)
-  } else {
-    base::tcrossprod(R)
-  }
-}
-
-SimSpl <- function (xd, boundary = "none") {
-  
-}
-
-
-Diff <- function (x, k = 1L, n = length(x), xi = 1L) {
-  if (!is.double(x)) stop("'x' is not in double-precision mode!")
-  .Call("C_Diff", x, k, n, xi, PACKAGE = "gps")
-}
-
-SparseDelta <- function (r) {
-  r <- as.integer(r)
-  x <- rep.int(c(-1, 1), r)
-  i <- rep(seq.int(0L, r - 1L), each = 2)
-  p <- c(0L, seq.int(1L, length.out = r, by = 2L), 2L * r)
-  methods::new("dgCMatrix", i = i, p = p, Dim = c(r, r + 1L), x = x)
-}
-
-SparseWtDelta <- function (h) {
-  r <- length(h)
-  x <- rep.int(c(-1, 1), r) * rep(1 / h, each = 2)
-  i <- rep(seq.int(0L, r - 1L), each = 2)
-  p <- c(0L, seq.int(1L, length.out = r, by = 2L), 2L * r)
-  methods::new("dgCMatrix", i = i, p = p, Dim = c(r, r + 1L), x = x)
-}
-
-SparseD <- function (xt, d) {
-  if (d < 2) stop("d >= 2 required!", call. = FALSE)
-  xt <- MonoKnots(xt, d)
-  K <- length(xt)
-  D <- vector("list", d - 1)
-  h <- Diff(x = xt, k = d - 1, n = K - 2, xi = 2)
-  D[[1]] <- SparseWtDelta(h)
-  i <- 2
-  while (i < d) {
-    h <- Diff(x = xt, k = d - i, n = K - 2 * i, xi = i + 1)
-    D[[i]] <- SparseWtDelta(h) %*% D[[i - 1]]
-    i <- i + 1
-  }
-  D
-}
-
-ComputeLD <- function (xt, d) {
-  if (d < 2) stop("d >= 2 required!", call. = FALSE)
-  xt <- MonoKnots(xt, d)
-  .Call("C_ComputeLD", xt, d, PACKAGE = "gps")
-}
-
-OrthNullD <- function (ld, m = 1, orthogonal = TRUE) {
-  if (m < 1 || m > ncol(ld)) stop("1 <= m <= d - 1 required!", call. = FALSE)
-  basis <- .Call("C_NullD", ld, m, PACKAGE = "gps")
-  if (orthogonal && (m > 1)) {
-    Q <- qr.Q(qr.default(basis[, m:1]))[, m:1]
-    i <- sequence.default(1:(m - 1))
-    j <- rep.int(2:m, 1:(m - 1))
-    Q[cbind(i, j)] <- 0
-    basis <- Q
-  }
-  basis
-}
-
-NullD <- function (xt, d, m) {
-  ld <- ComputeLD(xt, d)
-  OrthNullD(ld, m, orthogonal = FALSE)
-}
-
-DiffCoef <- function (b, xt, d, m) {
-  if (d < 2) stop("d >= 2 required!", call. = FALSE)
-  if (m < 0 || m >= d) stop("0 <= m <= d - 1 required!", call. = FALSE)
-  xt <- MonoKnots(xt, d)
-  K <- length(xt)
-  if (length(b) != K - d) {
-    stop("length(b) == length(xt) - d required!", call. = FALSE)
-  }
-  b <- as.double(b)
-  if (m == 0) return(b)
-  for (i in 1:m) {
-    h <- Diff(x = xt, k = d - i, n = K - 2 * i, xi = i + 1)
-    b <- Diff(b) / h
-  }
-  b
-}
-
 as_matrix <- function (A) {
   if (is.matrix(A)) return(A)
   sparse <- inherits(A, "dsparseMatrix")
@@ -1232,12 +1456,7 @@ VecScal <- function (a, x, overwrite = FALSE) {
   .Call("C_VecScal", a, x, overwrite, PACKAGE = "gps")
 }
 
-SetAttr <- function (x, Name, Value) {
-  .Call("C_SetAttr", x, Name, Value, PACKAGE = "gps")
-}
-
 
 ChangeDim <- function (x, Value) {
   .Call("C_SetDim", x, Value, PACKAGE = "gps")
 }
-
