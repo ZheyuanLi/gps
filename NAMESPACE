@@ -1,11 +1,11 @@
 useDynLib(gps, .registration = TRUE)
 
 export(MakeGrid, PlaceKnots, DemoKnots, DemoBS, DemoSpl,
-       SparseD, NullD, DemoNull, DiffCoef,
-       SandBar, SparseS, btSb,
-       PriorCoef, MPinverse,
+       SparseD, DemoNull, DiffCoef,
+       GramBS, btSb,
+       PriorCoef, MPinv,
        pbsDesign, SparsePD, DemoPBS,
-       gps2Grid, DReigen, Rho2EDF)
+       gps2GS, DemoRhoLim)
 
 import(stats)
 importFrom(splines, splineDesign)
