@@ -79,6 +79,19 @@ DtD <- function (Dt) {
   .Call("C_DtD", Dt, PACKAGE = "gps")
 }
 
+Dt2ThinQR <- function (D, form.Q = TRUE) {
+  Dt <- Csparse2LTB(D)
+  A <- DDt(Dt)
+  Rt <- LPBTRF(A, overwrite = TRUE)
+  if (form.Q) {
+    denseD <- as_matrix(D)
+    Qt <- SolveLTB(transA = FALSE, Rt, denseD, overwrite = TRUE)
+  } else {
+    Qt <- NULL
+  }
+  list(Qt = Qt, Rt = Rt)
+}
+
 IsMonoInc <- function (x, n = length(x), xi = 1L) {
   .Call("C_IsMonoInc", x, n, xi, PACKAGE = "gps") > 0L
 }
@@ -1129,22 +1142,32 @@ PriorCoef2 <- function (n, D) {
   if (n > 1) rbind(r, b) else c(r, b)
 }
 
-PriorCoef <- function (n, D) {
-  PriorCoef2(n, D)
+PriorCoef3 <- function (n, D) {
+  Dim <- D@Dim
+  q <- Dim[1L]
+  p <- Dim[2L]
+  QR <- Dt2ThinQR(D, form.Q = FALSE)
+  Rt <- QR$Rt
+  e <- rnorm(n * q)
+  if (n > 1) e <- ChangeDim(e, c(q, n))
+  x <- SolveLTB(transA = FALSE, Rt, e, overwrite = TRUE)
+  x <- SolveLTB(transA = TRUE, Rt, x, overwrite = TRUE)
+  b <- Matrix::crossprod(D, x)
+  if (n == 1) b@x else as_matrix(b)
 }
 
-Dt2ThinQR <- function (Dt) {
-  A <- DDt(Dt)
-  Rt <- LPBTRF(A, overwrite = TRUE)
-  denseDt <- LTB2Dense(Dt, sum(dim(Dt)) - 1L)  ## does not work for O-spline
-  Qt <- SolveLTB(transA = FALSE, Rt, t.default(denseDt), overwrite = TRUE)
-  list(Qt = Qt, Rt = Rt)
+PriorCoef <- function (n, D) {
+  b <- PriorCoef3(n, D)
+  sig <- sqrt(MPinv0(D, only.diag = TRUE))
+  scale.fctr <- 1 / sig[1]
+  b <- VecScal(scale.fctr, b, overwrite = TRUE)
+  sig <- VecScal(scale.fctr, sig, overwrite = TRUE)
+  list(coef = b, sigma = sig)
 }
 
 MPinvUUt <- function (D, method = "qr") {
   if (method == "qr") {
-    Dt <- Csparse2LTB(D)
-    QR <- Dt2ThinQR(Dt)
+    QR <- Dt2ThinQR(D, form.Q = TRUE)
     Qt <- QR$Qt
     Rt <- QR$Rt
     SolveLTB(transA = TRUE, Rt, Qt, overwrite = TRUE)
@@ -1158,17 +1181,46 @@ MPinvUUt <- function (D, method = "qr") {
     di <- 1 / d
     sqrt(di) * t.default(Q)
   } else {
-    stop("'method' must be either \"qr\" or \"eigen\"!")
+    stop("'method' must be either \"qr\" or \"eigen\"!", call. = FALSE)
   }
 }
 
-MPinv <- function (D, only.diag = FALSE) {
+MPinv0 <- function (D, only.diag = FALSE) {
   Ut <- MPinvUUt(D, method = "qr")
   if (only.diag) {
     base::colSums(Ut * Ut)
   } else {
     base::crossprod(Ut)
   }
+}
+
+MPinv <- function (D, only.diag = FALSE) {
+  V <- MPinv0(D, only.diag)
+  VecScal(1 / V[1L], V, overwrite = TRUE)
+}
+
+
+Prior2Cond <- function (k) {
+  rho <- seq.int(0.05, 1, 0.05)
+  N <- length(rho)
+  cond.X <- numeric(N)
+  for (i in 1:N) {
+    Dt <- matrix(c(rho[i], -(1 + rho[i]), 1), nrow = 3, ncol = k + 2)
+    R <- matrix(0, nrow = k + 2, ncol = 2L)
+    R[c(k + 1, k + 2, 2 * k + 4)] <- c(1, -(1 + rho[i]),  1)
+    X <- SolveLTB(transA = TRUE, Dt, R, overwrite = TRUE)
+    XtX <- base::crossprod(X)
+    ka <- try(kappa(X, exact = TRUE), silent = TRUE)
+    cond.X[i] <- if (inherits(ka, "try-error")) Inf else ka
+  }
+  cond.XtX <- cond.X ^ 2
+  op <- par(mfrow = c(1, 2), mgp = c(1.5, 0.5, 0), mar = c(2.5, 2.5, 1.5, 0.5))
+  on.exit(op)
+  plot.default(rho, log10(cond.X), type = "b", xlab = expression(rho),
+               ylab = "log10(condition number)", main = "X")
+  plot.default(rho, log10(cond.XtX), type = "b", xlab = expression(rho),
+               ylab = "log10(condition number)", main = "X'X")
+  list(rho = rho, X = cond.X, XtX = cond.XtX)
 }
 
 
@@ -1423,12 +1475,291 @@ SparsePD2 <- function (xd, d) {
   PD
 }
 
+
+DemoKernel <- function (bw = 1) {
+  sig <- 0.25 * bw / qnorm(0.75)
+  xg <- seq.int(-4 * sig, 4 * sig, length.out = 100)
+  yg <- dnorm(xg, sd = sig)
+  op <- par(mgp = c(1.5, 0.5, 0), mar = c(2.5, 2.5, 1.5, 0.5), xpd = TRUE)
+  on.exit(par(op))
+  plot.default(xg, yg, type = "l", xlab = "u", ylab = "K(u)",
+               lwd = 2, yaxs = "i", bty = "l")
+  title("kernel functions used in stats::ksmooth")
+  segments(-0.5 * bw, 1 / bw, 0.5 * bw, 1 / bw, lwd = 2, lty = 3)
+  segments(-0.5 * bw, 0, -0.5 * bw, 1 / bw, lty = 2, col = 8)
+  segments(0.5 * bw, 0, 0.5 * bw, 1 / bw, lty = 2, col = 8)
+  legend("topleft", legend = c("box", "gaussian"), lwd = 2, lty = c(3, 1))
+}
+
+ksVec <- function (x, r = 0.1) {
+  n <- length(x)
+  i <- seq_len(n)
+  bw <- n * r * qnorm(0.75) / 0.75
+  stats::ksmooth(i, x, "normal", bw, x.points = i)$y
+}
+
+
+buildB <- function (x, domain = NULL, k = 10) {
+  if (is.null(domain)) {
+    a <- min(x)
+    b <- max(x)
+    domain <- c(a, b)
+  } else {
+    a <- domain[1L]
+    b <- domain[2L]
+    if (min(x) < a || max(x) > b) {
+      stop("'domain' does not contain all x-values!", call. = FALSE)
+    }
+  }
+  xd <- seq.int(a, b, length.out = k + 2)
+  h <- xd[2L] - xd[1L]
+  laux <- seq.int(to = a - h, by = h, length.out = 3L)
+  raux <- seq.int(from = b + h, by = h, length.out = 3L)
+  xt <- c(laux, xd, raux)
+  B <- splines::splineDesign(xt, x, ord = 4L, sparse = TRUE)
+  list(B = B, xt = xt, domain = domain)
+}
+
+rsplRW1 <- function (x, domain = NULL, k = 26, r = 0.2, n = 1, plot = FALSE) {
+  spl <- buildB(x, domain, k)
+  B <- spl$B
+  D <- SparseD(spl$xt, d = 4, m = 1, gps = TRUE)[[1]]
+  Coef <- PriorCoef(n, D)
+  b0 <- Coef$coef
+  i <- seq_len(k + 4)
+  m <- mean.default(Coef$sigma)
+  if (n > 1) {
+    bm <- b0 + rep(runif(n, -m, m), each = k + 4)
+    b <- matrix(0, nrow = k + 4, ncol = n)
+    for (j in 1:n) b[, j] <- ksVec(bm[, j], r)
+    y <- as_matrix(B %*% b)
+  } else {
+    bm <- b0 + runif(1, -m, m)
+    b <- ksVec(bm, r)
+    y <- (B %*% b)@x
+  }
+  if (plot) {
+    ylim <- range(b0, bm)
+    op <- par(mfrow = c(2, 2), mgp = c(1.5, 0.5, 0),
+              mar = c(2.5, 2.5, 1.5, 0.5), oma = c(0, 0, 1.5, 0))
+    on.exit(par(op))
+    matplot(i, b0, type = "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(1) prior B-spline coefficients")
+    matplot(i, bm, "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(2) mean-adjusted coefficients")
+    matplot(i, b, "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(3) smoothed coefficients")
+    matplot(x, y, "l", col = 1:7, ylim = ylim, ylab = "spline(s)")
+    title("(4) random cubic spline(s)")
+    title("rw(1) prior for B-spline coefficients", outer = TRUE)
+  }
+  list(y = y, b = b, xt = spl$xt, domain = spl$domain)
+}
+
+rsplRW2 <- function (x, domain = NULL, k = 26, r = 0.15, n = 1, plot = FALSE) {
+  spl <- buildB(x, domain, k)
+  B <- spl$B
+  D <- SparseD(spl$xt, d = 4, m = 2, gps = TRUE)[[1]]
+  Coef <- PriorCoef(n, D)
+  b0 <- Coef$coef
+  i <- seq_len(k + 4)
+  ic <- 0.5 * (k + 5)
+  s <- 2 / (k + 3)
+  m <- mean.default(Coef$sig)
+  if (n > 1) {
+    l0 <- base::tcrossprod(i - ic, runif(n, -s, s))
+    bl0 <- b0 + l0
+    bl <- bl0 + rep(runif(n, -m, m), each = k + 4)
+    b <- matrix(0, nrow = k + 4, ncol = n)
+    for (j in 1:n) b[, j] <- ksVec(bl[, j], r)
+    y <- as_matrix(B %*% b)
+  } else {
+    l0 <- runif(1, -s, s) * (i - ic)
+    bl0 <- b0 + l0
+    bl <- bl0 + runif(1, -m, m)
+    b <- ksVec(bl, r)
+    y <- (B %*% b)@x
+  }
+  if (plot) {
+    ylim <- range(b0, bl0, bl)
+    op <- par(mfrow = c(2, 3), mgp = c(1.5, 0.5, 0),
+              mar = c(2.5, 2.5, 1.5, 0.5), oma = c(0, 0, 1.5, 0))
+    on.exit(par(op))
+    matplot(i, b0, type = "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(1) prior B-spline coefficients")
+    matplot(i, l0, type = "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(2) zero-mean random trend(s)")
+    matplot(i, bl0, "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(3) trend-adjusted coefficients")
+    matplot(i, bl, "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(4) mean-adjusted coefficients")
+    matplot(i, b, "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(5) smoothed coefficients")
+    matplot(x, y, "l", col = 1:7, ylim = ylim, ylab = "spline(s)")
+    title("(6) random cubic spline(s)")
+    title("rw(2) prior for B-spline coefficients", outer = TRUE)
+  }
+  list(y = y, b = b, xt = spl$xt, domain = spl$domain)
+}
+
+NullARI <- function (rho, k = 26) {
+  Dt <- matrix(0, nrow = k + 4, ncol = k + 2)
+  diagInd <- seq.int(1, by = k + 5, length.out = k + 2)
+  Dt[diagInd] <- rho
+  Dt[diagInd + 1L] <- -(1 + rho)
+  Dt[diagInd + 2L] <- 1
+  QR <- qr.default(Dt)
+  E <- matrix(0, nrow = k + 4, ncol = 2)
+  E[c(k + 3, 2 * k + 8)] <- 1
+  Q <- qr.qy(QR, E)
+  Z1 <- rep.int(1 / sqrt(k + 4), k + 4)
+  g <- solve.default(Q[1:2, ], Z1[1:2])
+  Z2 <- c(Q %*% c(-g[2L], g[1L]))
+  Z2 <- VecScal(sign(Z2[1L]), Z2, overwrite = TRUE)
+  cbind(Z1, Z2, deparse.level = 0L)
+}
+
+rsplARI <- function (x, domain = NULL, rho = 0.7, k = 26,
+                     r = 0.175, n = 1, plot = FALSE) {
+  spl <- buildB(x, domain, k)
+  B <- spl$B
+  Dt <- matrix(c(rho, -(1 + rho), 1), nrow = 3, ncol = k + 2)
+  D <- Matrix::t(LTB2Csparse(Dt, k = k + 4))
+  Coef <- PriorCoef(n, D)
+  b0 <- Coef$coef
+  Z2 <- NullARI(rho, k)[, 2]
+  i <- seq_len(k + 4)
+  s <- 1 / Z2[1L]
+  m <- mean.default(Coef$sigma)
+  if (n > 1) {
+    l0 <- base::tcrossprod(Z2, runif(n, -s, s))
+    bl0 <- b0 + l0
+    bl <- bl0 + rep(runif(n, -m, m), each = k + 4)
+    b <- matrix(0, nrow = k + 4, ncol = n)
+    for (j in 1:n) b[, j] <- ksVec(bl[, j], r)
+    y <- as_matrix(B %*% b)
+  } else {
+    l0 <- runif(1, -s, s) * Z2
+    bl0 <- b0 + l0
+    bl <- bl0 + runif(1, -m, m)
+    b <- ksVec(bl, r)
+    y <- (B %*% b)@x
+  }
+  if (plot) {
+    ylim <- range(b0, bl0, bl)
+    op <- par(mfrow = c(2, 3), mgp = c(1.5, 0.5, 0),
+              mar = c(2.5, 2.5, 1.5, 0.5), oma = c(0, 0, 1.5, 0))
+    on.exit(par(op))
+    matplot(i, b0, type = "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(1) prior B-spline coefficients")
+    matplot(i, l0, type = "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(2) zero-mean random trend(s)")
+    matplot(i, bl0, "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(3) trend-adjusted coefficients")
+    matplot(i, bl, "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(4) mean-adjusted coefficients")
+    matplot(i, b, "l", col = 1:7, ylim = ylim,
+            xlab = "index", ylab = "B-spline coefficients")
+    title("(5) smoothed coefficients")
+    matplot(x, y, "l", col = 1:7, ylim = ylim, ylab = "spline(s)")
+    title("(6) random cubic spline(s)")
+    title(sprintf("ARI(1, 1) prior for B-spline coefficients, with rho = %.2f", rho),
+          outer = TRUE)
+  }
+  list(y = y, b = b, xt = spl$xt, domain = spl$domain)
+}
+
+rsplm <- function (x, domain = NULL, m = 1.7, n = 1, plot = FALSE) {
+  if (m < 1 || m > 2) stop("m should be in [1, 2]!", call. = FALSE)
+  k <- 26
+  if (m == 1) {
+    rsplRW1(x, domain, k, 0.20, n, plot)
+  } else if (m == 2) {
+    rsplRW2(x, domain, k, 0.15, n, plot)
+  } else {
+    rsplARI(x, domain, m - 1, k, 0.175, n, plot)
+  }
+}
+
+rsplNLE <- function (x, domain = NULL, m = 1.7, n = 1000, plot = TRUE) {
+  y <- rsplm(x, domain, m, n)$y
+  k <- numeric(n)
+  for (j in 1:n) k[j] <- nle(y[, j])
+  f <- tabulate(k)
+  K <- 1:length(f)
+  N <- sum(f)
+  if (N < n) {
+    f <- c(n - N, f)
+    K <- c(0, K)
+  }
+  names(f) <- as.character(K)
+  p <- (1 / n) * f
+  if (plot) {
+    op <- par(mgp = c(1.5, 0.5, 0), mar = c(2.5, 2.5, 1.5, 0.5), xpd = TRUE)
+    xp <- barplot.default(p, xlab = "number of local extrema", ylab = "percentage")
+    text.default(xp, p, sprintf("%.2f", p), pos = 3, font = 2)
+    title(sprintf("m = %.2f", m))
+  }
+  p
+}
+
+rsplCMP <- function (x, domain = NULL, m = c(1, 1.7, 2), n = 1000) {
+  if (!is.matrix(x)) {
+    mchar <- sprintf("%.2f", m)
+    N <- length(m)
+    p.list <- vector("list", N)
+    for (l in 1:N) {
+      p.list[[l]] <- rsplNLE(x, domain, m[l], n, plot = FALSE) * 100
+    }
+    kl <- lapply(p.list, function (x) as.integer(names(x)))
+    k <- sort.int(unique.default(unlist(kl, use.names = FALSE)))
+    j <- lapply(kl, match, table = k)
+    i <- rep.int(1:N, lengths(j, use.names = FALSE))
+    p <- matrix(0, nrow = N, ncol = length(k), dimnames = list(mchar, as.character(k)))
+    p[cbind(i, unlist(j))] <- unlist(p.list)
+  } else {
+    p <- x
+    N <- nrow(p)
+    mchar <- rownames(p)
+  }
+  if (N > 3) {
+    warning("Can't draw more than 3 bars per group!", call. = FALSE)
+  } else {
+    my.col <- seq.int(2, by = 1, length.out = N)
+    op <- par(mgp = c(1.5, 0.5, 0), mar = c(2.5, 2.5, 1.5, 0.5), xpd = TRUE)
+    on.exit(par(op))
+    p <- p[, colSums(p < 0.5) < N]
+    xp <- barplot.default(p, beside = TRUE, col = my.col,
+                          xlab = "number of local extrema", ylab = "percentage")
+    text.default(xp, p, sprintf("%.2f", p), pos = 3, col = my.col, font = 2)
+    legend("topright", legend = mchar, fill = my.col, text.col = my.col)
+    title("rsplm() with different m values")
+  }
+  p
+}
+
+rspl <- function (x, domain = NULL, n = 1) {
+  rsplARI(x, domain, rho = 0.7, k = 26, r = 0.175, n, plot = FALSE)
+}
+
 as_matrix <- function (A) {
   if (is.matrix(A)) return(A)
   sparse <- inherits(A, "dsparseMatrix")
   dense <- inherits(A, "ddenseMatrix")
   if (!sparse && !dense) {
-    stop("'A' is not a \"dsparseMatrix\" or \"ddenseMatrix\"!")
+    stop("'A' is not a \"dsparseMatrix\" or \"ddenseMatrix\"!", call. = FALSE)
   }
   nnz <- length(A@x)
   nr <- A@Dim[1]
@@ -1442,7 +1773,7 @@ as_matrix <- function (A) {
     denseA[j * nr + (i + 1L)] <- A@x
     if (inherits(A, "dsCMatrix")) denseA[i * nc + (j + 1L)] <- A@x
   } else {
-    stop("Not implemented yet!")
+    stop("as_matrix() does not support this matrix A yet!", call. = FALSE)
   }
   denseA
 }
@@ -1460,3 +1791,6 @@ VecScal <- function (a, x, overwrite = FALSE) {
 ChangeDim <- function (x, Value) {
   .Call("C_SetDim", x, Value, PACKAGE = "gps")
 }
+
+nle <- function (x) sum(Diff(sign(Diff(x))) != 0)
+

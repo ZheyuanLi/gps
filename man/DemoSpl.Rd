@@ -19,7 +19,7 @@ DemoSpl(uniform = TRUE)
 }
 
 \value{
-A list giving domain knots, B-spline coefficients and piecewise polynomial coefficients of the illustrated cubic spline.
+A list giving the domain knots, B-spline coefficients and piecewise polynomial coefficients of the illustrated cubic spline.
 }
 
 \author{

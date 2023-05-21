@@ -58,9 +58,13 @@ In the Bayesian view, the penalty \eqn{\bm{\beta'S\beta}} is a Gaussian prior fo
 \value{
 \code{SparseD} returns a list of sparse matrices (of "dgCMatrix" class), giving \eqn{\bm{D}_{\textrm{gps}}} or \eqn{\bm{D}_{\textrm{os}}} of order \code{m[1]}, \code{m[2]}, ..., \code{m[length(m)]}. In the latter case, \eqn{\bm{\bar{S}}} (sparse matrices of "dsCMatrix" or "ddiMatrix" class) and \eqn{\bm{D}_{\textrm{gps}}} for computing \eqn{\bm{D}_{\textrm{os}}} are also returned in a "sandwich" attribute.
 
-\code{PriorCoef} returns a vector of B-spline coefficients when \code{n = 1}. If \code{n > 1}, it returns a matrix of \code{n} columns, where each column is an independent sample.
+\code{PriorCoef} returns a list of two components:
+\itemize{
+\item \code{coef} gives a vector of B-spline coefficients when \code{n = 1}, or a matrix of \code{n} columns when \code{n > 1}, where each column is an independent sample;
+\item \code{sigma} is a vector, giving the marginal standard deviation for each B-spline coefficient.
+}
 
-\code{MPinv} returns \eqn{\bm{(D'D})^-} as a dense matrix.
+\code{MPinv} returns the dense Moore-Penrose generalized inverse matrix \eqn{\bm{(D'D})^-} if \code{only.diag = FALSE}, and the diagonal entries of this matrix if \code{only.diag = TRUE}.
 }
 
 \author{
@@ -106,8 +110,8 @@ range(S2.os - t(D2.gps) \%*\% Sbar2 \%*\% D2.gps) / max(abs(S2.os))
 range(S3.os - t(D3.gps) \%*\% Sbar3 \%*\% D3.gps) / max(abs(S3.os))
 
 ## sample B-spline coefficients from their prior distribution
-b.gps <- PriorCoef(n = 5, D2.gps)
-b.os <- PriorCoef(n = 5, D2.os)
+b.gps <- PriorCoef(n = 5, D2.gps)$coef
+b.os <- PriorCoef(n = 5, D2.os)$coef
 op <- par(mfrow = c(1, 2), mar = c(2, 2, 1.5, 0.5), oma = c(0, 0, 1, 0))
 ## prior B-spline coefficients with a general difference penalty
 matplot(b.gps, type = "l", lty = 1, ann = FALSE)

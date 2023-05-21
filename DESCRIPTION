@@ -1,6 +1,6 @@
 Package: gps
-Version: 1.1
-Date: 2023-04-29
+Version: 1.2
+Date: 2023-05-21
 Title: General P-Splines
 Authors@R: person("Zheyuan", "Li", role = c("aut", "cre"),
                   email = "zheyuan.li@bath.edu",
